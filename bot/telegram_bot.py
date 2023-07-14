@@ -93,7 +93,8 @@ class ChatGPTTelegramBot:
             BotCommand(
                 command="model",
                 description=localized_text("change_model", bot_language),
-            ),
+            ),,
+            BotCommand(command='model', description=localized_text('change_model', bot_language)),
         ]
         self.group_commands = [
             BotCommand(
@@ -971,9 +972,7 @@ class ChatGPTTelegramBot:
             )
         else:
             result_id = str(uuid4())
-            await self.send_inline_query_result(
-                update, result_id, message_content=self.budget_limit_message
-            )
+            await self.send_inline_query_result(update, result_id, message_content=self.budget_limit_message)
 
     async def change_model(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Change the model used by the bot"""
@@ -992,41 +991,37 @@ class ChatGPTTelegramBot:
 
         models_by_name = {
             "GPT-3 models": "\n".join(GPT_3_MODELS + GPT_3_16K_MODELS),
-            "GPT-4 models": "\n".join(GPT_4_MODELS + GPT_4_32K_MODELS),
+            "GPT-4 models": "\n".join(GPT_4_MODELS + GPT_4_32K_MODELS)
         }
 
-        available_models = "\n\n".join(
-            f"*{escape(name)}:*\n{escape(models)}"
-            for name, models in models_by_name.items()
-        )
+        available_models = "\n\n".join(f"*{escape(name)}:*\n{escape(models)}" for name, models in models_by_name.items())
 
         if not context.args:
             await update.effective_message.reply_text(
                 message_thread_id=get_thread_id(update),
-                text=escape(f"Your current model is '{self.openai.config['model']}'. ")
-                + f"Available models:\n\n{available_models}",
+                text=escape(f"Your current model is '{self.openai.config['model']}'. ") + \
+                    f"Available models:\n\n{available_models}",
                 disable_web_page_preview=True,
                 parse_mode=constants.ParseMode.MARKDOWN_V2,
             )
             return
 
-        model = context.args[0].lower()
+        model = "-".join(context.args).lower()
 
         if not model.startswith(("gpt-3", "gpt3", "gpt-4", "gpt4")):
             await update.effective_message.reply_text(
                 message_thread_id=get_thread_id(update),
-                text=f"Invalid model specified. Available models:\n\n{available_models}",
+                text=f"'{model}' is not a valid model\. Available models:\n\n{available_models}",
                 disable_web_page_preview=True,
+                parse_mode=constants.ParseMode.MARKDOWN_V2,
             )
             return
 
         if model.startswith(("gpt-4", "gpt4")):
             new_model = model if model in GPT_4_MODELS + GPT_4_32K_MODELS else "gpt-4"
         else:
-            # Default is gpt-3.5-turbo``
-            new_model = (
-                model if model in GPT_3_MODELS + GPT_3_16K_MODELS else "gpt-3.5-turbo"
-            )
+            # Default is gpt-3.5-turbo
+            new_model = model if model in GPT_3_MODELS + GPT_3_16K_MODELS else "gpt-3.5-turbo"
 
         self.openai.change_model(new_model)
 
@@ -1040,7 +1035,7 @@ class ChatGPTTelegramBot:
             f"Model changed for user {update.message.from_user.name} "
             f"(id: {update.message.from_user.id}). New model: {new_model}"
         )
-
+    
     async def post_init(self, application: Application) -> None:
         """
         Post initialization hook for the bot.

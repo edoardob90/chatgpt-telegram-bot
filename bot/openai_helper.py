@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import json
+
+import json
 import logging
 import os
 from calendar import monthrange
 from datetime import date, timedelta, datetime
+from calendar import monthrange
+from datetime import date, timedelta, datetime
 
 import openai
+from openai.error import RateLimitError, InvalidRequestError
 from openai.error import RateLimitError, InvalidRequestError
 import requests
 import tiktoken
@@ -221,6 +226,8 @@ class OpenAIHelper:
                 stream=stream,
             )
 
+        except RateLimitError as err:
+            raise err
         except RateLimitError as err:
             raise err
 
