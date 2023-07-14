@@ -359,7 +359,6 @@ def add_chat_request_to_usage_tracker(usage, config, user_id, used_tokens):
             usage["guests"].add_chat_tokens(used_tokens, config["token_price"])
     except Exception as e:
         logging.warning(f"Failed to add tokens to usage_logs: {str(e)}")
-        pass
 
 
 def get_reply_to_message_id(config, update: Update):

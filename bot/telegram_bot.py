@@ -93,7 +93,7 @@ class ChatGPTTelegramBot:
             BotCommand(
                 command="model",
                 description=localized_text("change_model", bot_language),
-            ),,
+            ),
             BotCommand(command='model', description=localized_text('change_model', bot_language)),
         ]
         self.group_commands = [
@@ -1011,7 +1011,8 @@ class ChatGPTTelegramBot:
         if not model.startswith(("gpt-3", "gpt3", "gpt-4", "gpt4")):
             await update.effective_message.reply_text(
                 message_thread_id=get_thread_id(update),
-                text=f"'{model}' is not a valid model\. Available models:\n\n{available_models}",
+                text=escape(f"'{model}' is not a valid model. ") + \
+                    "Available models:\n\n{available_models}",
                 disable_web_page_preview=True,
                 parse_mode=constants.ParseMode.MARKDOWN_V2,
             )
