@@ -16,8 +16,8 @@ from pydub import AudioSegment
 
 from utils import is_group_chat, get_thread_id, message_text, wrap_with_indicator, split_into_chunks, \
     edit_message_with_retry, get_stream_cutoff_values, is_allowed, get_remaining_budget, is_admin, is_within_budget, \
-    get_reply_to_message_id, add_chat_request_to_usage_tracker, error_handler
-from openai_helper import OpenAIHelper, localized_text
+    get_reply_to_message_id, add_chat_request_to_usage_tracker, error_handler, escape
+from openai_helper import OpenAIHelper, localized_text, GPT_3_MODELS, GPT_3_16K_MODELS, GPT_4_MODELS, GPT_4_32K_MODELS
 from usage_tracker import UsageTracker
 
 
@@ -40,7 +40,8 @@ class ChatGPTTelegramBot:
             BotCommand(command='reset', description=localized_text('reset_description', bot_language)),
             BotCommand(command='image', description=localized_text('image_description', bot_language)),
             BotCommand(command='stats', description=localized_text('stats_description', bot_language)),
-            BotCommand(command='resend', description=localized_text('resend_description', bot_language))
+            BotCommand(command='resend', description=localized_text('resend_description', bot_language)),
+            BotCommand(command='model', description=localized_text('change_model', bot_language)),
         ]
         self.group_commands = [BotCommand(
             command='chat', description=localized_text('chat_description', bot_language)
@@ -726,6 +727,67 @@ class ChatGPTTelegramBot:
             result_id = str(uuid4())
             await self.send_inline_query_result(update, result_id, message_content=self.budget_limit_message)
 
+    async def change_model(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Change the model used by the bot"""
+        if not await is_allowed(self.config, update, context):
+            logging.warning(
+                f"User {update.message.from_user.name} (id: {update.message.from_user.id}) "
+                "is not allowed to change the model"
+            )
+            await self.send_disallowed_message(update, context)
+            return
+
+        logging.info(
+            f"Changing the model for user {update.message.from_user.name} "
+            f"(id: {update.message.from_user.id})..."
+        )
+
+        models_by_name = {
+            "GPT-3 models": "\n".join(GPT_3_MODELS + GPT_3_16K_MODELS),
+            "GPT-4 models": "\n".join(GPT_4_MODELS + GPT_4_32K_MODELS)
+        }
+
+        available_models = "\n\n".join(f"*{escape(name)}:*\n{escape(models)}" for name, models in models_by_name.items())
+
+        if not context.args:
+            await update.effective_message.reply_text(
+                message_thread_id=get_thread_id(update),
+                text=escape(f"Your current model is '{self.openai.config['model']}'. ") + \
+                    f"Available models:\n\n{available_models}",
+                disable_web_page_preview=True,
+                parse_mode=constants.ParseMode.MARKDOWN_V2,
+            )
+            return
+
+        model = context.args[0].lower()
+
+        if not model.startswith(("gpt-3", "gpt3", "gpt-4", "gpt4")):
+            await update.effective_message.reply_text(
+                message_thread_id=get_thread_id(update),
+                text=f"Invalid model specified. Available models:\n\n{available_models}",
+                disable_web_page_preview=True,
+            )
+            return
+
+        if model.startswith(("gpt-4", "gpt4")):
+            new_model = model if model in GPT_4_MODELS + GPT_4_32K_MODELS else "gpt-4"
+        else:
+            # Default is gpt-3.5-turbo``
+            new_model = model if model in GPT_3_MODELS + GPT_3_16K_MODELS else "gpt-3.5-turbo"
+
+        self.openai.change_model(new_model)
+
+        await update.effective_message.reply_text(
+            message_thread_id=get_thread_id(update),
+            text=f"Model changed to '{new_model}'.",
+            disable_web_page_preview=True,
+        )
+
+        logging.info(
+            f"Model changed for user {update.message.from_user.name} "
+            f"(id: {update.message.from_user.id}). New model: {new_model}"
+        )
+    
     async def post_init(self, application: Application) -> None:
         """
         Post initialization hook for the bot.
@@ -754,6 +816,7 @@ class ChatGPTTelegramBot:
         application.add_handler(CommandHandler(
             'chat', self.prompt, filters=filters.ChatType.GROUP | filters.ChatType.SUPERGROUP)
         )
+        application.add_handler(CommandHandler('model', self.change_model))
         application.add_handler(MessageHandler(
             filters.AUDIO | filters.VOICE | filters.Document.AUDIO |
             filters.VIDEO | filters.VIDEO_NOTE | filters.Document.VIDEO,
