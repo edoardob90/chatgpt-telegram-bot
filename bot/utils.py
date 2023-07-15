@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import itertools
 import logging
+from typing import Callable
+from functools import wraps
 
 import telegram
 from telegram import Message, MessageEntity, Update, ChatMember, constants
@@ -145,7 +147,7 @@ async def error_handler(_: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     logging.error(f'Exception while handling an update: {context.error}')
 
 
-async def is_allowed(config, update: Update, context: CallbackContext, is_inline=False) -> bool:
+async def is_allowed(config, update: Update, context: CallbackContext, is_inline: bool = False) -> bool:
     """
     Checks if the user is allowed to use the bot.
     """
@@ -153,24 +155,33 @@ async def is_allowed(config, update: Update, context: CallbackContext, is_inline
         return True
 
     user_id = update.inline_query.from_user.id if is_inline else update.message.from_user.id
+    
     if is_admin(config, user_id):
         return True
+    
     name = update.inline_query.from_user.name if is_inline else update.message.from_user.name
+    
     allowed_user_ids = config['allowed_user_ids'].split(',')
+    
     # Check if user is allowed
     if str(user_id) in allowed_user_ids:
         return True
+    
     # Check if it's a group a chat with at least one authorized member
     if not is_inline and is_group_chat(update):
         admin_user_ids = config['admin_user_ids'].split(',')
+        
         for user in itertools.chain(allowed_user_ids, admin_user_ids):
             if not user.strip():
                 continue
+            
             if await is_user_in_group(update, context, user):
                 logging.info(f'{user} is a member. Allowing group chat message...')
                 return True
+        
         logging.info(f'Group chat messages from user {name} '
                      f'(id: {user_id}) are not allowed')
+    
     return False
 
 def is_admin(config, user_id: int, log_no_admin=False) -> bool:
@@ -181,6 +192,7 @@ def is_admin(config, user_id: int, log_no_admin=False) -> bool:
     if config['admin_user_ids'] == '-':
         if log_no_admin:
             logging.info('No admin user defined.')
+        
         return False
 
     admin_user_ids = config['admin_user_ids'].split(',')
@@ -190,6 +202,29 @@ def is_admin(config, user_id: int, log_no_admin=False) -> bool:
         return True
 
     return False
+
+def requires_auth(
+        logging_message: str = "perform this action",
+        is_inline: bool = False
+    ) -> Callable:
+    """Requires authentication for a command"""
+    
+    def decorator(func: Callable) -> Callable:
+        
+        @wraps(func)
+        async def wrapper(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> Callable | None:
+            if not await is_allowed(self.config, update, context, is_inline=is_inline):
+                logging.warning(f'User {update.message.from_user.name} (id: {update.message.from_user.id}) '
+                            f'is not allowed to {logging_message}')
+                
+                await self.send_disallowed_message(update, context)
+                return None
+            
+            return await func(self, update, context)
+        
+        return wrapper
+    
+    return decorator
 
 
 def get_user_budget(config, user_id) -> float | None:
