@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-
 from uuid import uuid4
+
+from pydub import AudioSegment
 from telegram import BotCommandScopeAllGroupChats, Update, constants
 from telegram import (
     InlineKeyboardMarkup,
@@ -25,8 +26,15 @@ from telegram.ext import (
     CallbackContext,
 )
 
-from pydub import AudioSegment
-
+from openai_helper import (
+    OpenAIHelper,
+    localized_text,
+    GPT_3_MODELS,
+    GPT_3_16K_MODELS,
+    GPT_4_MODELS,
+    GPT_4_32K_MODELS,
+)
+from usage_tracker import UsageTracker
 from utils import (
     is_group_chat,
     get_thread_id,
@@ -44,15 +52,6 @@ from utils import (
     error_handler,
     escape,
 )
-from openai_helper import (
-    OpenAIHelper,
-    localized_text,
-    GPT_3_MODELS,
-    GPT_3_16K_MODELS,
-    GPT_4_MODELS,
-    GPT_4_32K_MODELS,
-)
-from usage_tracker import UsageTracker
 
 
 class ChatGPTTelegramBot:
@@ -97,11 +96,11 @@ class ChatGPTTelegramBot:
             BotCommand(command='model', description=localized_text('change_model', bot_language)),
         ]
         self.group_commands = [
-            BotCommand(
-                command="chat",
-                description=localized_text("chat_description", bot_language),
-            )
-        ] + self.commands
+                                  BotCommand(
+                                      command="chat",
+                                      description=localized_text("chat_description", bot_language),
+                                  )
+                              ] + self.commands
         self.disallowed_message = localized_text("disallowed", bot_language)
         self.budget_limit_message = localized_text("budget_limit", bot_language)
         self.usage = {}
@@ -118,13 +117,13 @@ class ChatGPTTelegramBot:
         ]
         bot_language = self.config["bot_language"]
         help_text = (
-            localized_text("help_text", bot_language)[0]
-            + "\n\n"
-            + "\n".join(commands_description)
-            + "\n\n"
-            + localized_text("help_text", bot_language)[1]
-            + "\n\n"
-            + localized_text("help_text", bot_language)[2]
+                localized_text("help_text", bot_language)[0]
+                + "\n\n"
+                + "\n".join(commands_description)
+                + "\n\n"
+                + localized_text("help_text", bot_language)[1]
+                + "\n\n"
+                + localized_text("help_text", bot_language)[2]
         )
         await update.message.reply_text(help_text, disable_web_page_preview=True)
 
@@ -304,8 +303,8 @@ class ChatGPTTelegramBot:
                 )
                 # add guest chat request to guest usage tracker
                 if (
-                    str(user_id) not in self.config["allowed_user_ids"].split(",")
-                    and "guests" in self.usage
+                        str(user_id) not in self.config["allowed_user_ids"].split(",")
+                        and "guests" in self.usage
                 ):
                     self.usage["guests"].add_image_request(
                         image_size, self.config["image_prices"]
@@ -407,8 +406,8 @@ class ChatGPTTelegramBot:
                 )
 
                 if (
-                    self.config["voice_reply_transcript"]
-                    and not response_to_transcription
+                        self.config["voice_reply_transcript"]
+                        and not response_to_transcription
                 ):
                     # Split into chunks of 4096 characters (Telegram's message limit)
                     transcript_output = f"_{localized_text('transcript', bot_language)}:_\n\"{transcript}\""
@@ -498,21 +497,21 @@ class ChatGPTTelegramBot:
             trigger_keyword = self.config["group_trigger_keyword"]
 
             if prompt.lower().startswith(
-                trigger_keyword.lower()
+                    trigger_keyword.lower()
             ) or update.message.text.lower().startswith("/chat"):
                 if prompt.lower().startswith(trigger_keyword.lower()):
-                    prompt = prompt[len(trigger_keyword) :].strip()
+                    prompt = prompt[len(trigger_keyword):].strip()
 
                 if (
-                    update.message.reply_to_message
-                    and update.message.reply_to_message.text
-                    and update.message.reply_to_message.from_user.id != context.bot.id
+                        update.message.reply_to_message
+                        and update.message.reply_to_message.text
+                        and update.message.reply_to_message.from_user.id != context.bot.id
                 ):
                     prompt = f'"{update.message.reply_to_message.text}" {prompt}'
             else:
                 if (
-                    update.message.reply_to_message
-                    and update.message.reply_to_message.from_user.id == context.bot.id
+                        update.message.reply_to_message
+                        and update.message.reply_to_message.from_user.id == context.bot.id
                 ):
                     logging.info("Message is a reply to the bot, allowing...")
                 else:
@@ -594,8 +593,8 @@ class ChatGPTTelegramBot:
                                 continue
 
                         elif (
-                            abs(len(content) - len(prev)) > cutoff
-                            or tokens != "not_finished"
+                                abs(len(content) - len(prev)) > cutoff
+                                or tokens != "not_finished"
                         ):
                             prev = content
 
@@ -688,7 +687,7 @@ class ChatGPTTelegramBot:
             )
 
     async def inline_query(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+            self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         """
         Handle the inline query. This is run when you type: @botusername <query>
@@ -697,7 +696,7 @@ class ChatGPTTelegramBot:
         if len(query) < 3:
             return
         if not await self.check_allowed_and_within_budget(
-            update, context, is_inline=True
+                update, context, is_inline=True
         ):
             return
 
@@ -711,7 +710,7 @@ class ChatGPTTelegramBot:
         )
 
     async def send_inline_query_result(
-        self, update: Update, result_id, message_content, callback_data=""
+            self, update: Update, result_id, message_content, callback_data=""
     ):
         """
         Send inline query result
@@ -737,7 +736,7 @@ class ChatGPTTelegramBot:
                 input_message_content=InputTextMessageContent(message_content),
                 description=message_content,
                 thumb_url="https://user-images.githubusercontent.com/11541888/223106202-7576ff11-2c8e-408d-94ea"
-                "-b02a7a32149a.png",
+                          "-b02a7a32149a.png",
                 reply_markup=reply_markup,
             )
 
@@ -748,7 +747,7 @@ class ChatGPTTelegramBot:
             )
 
     async def handle_callback_inline_query(
-        self, update: Update, context: CallbackContext
+            self, update: Update, context: CallbackContext
     ):
         """
         Handle the callback query from the inline query result
@@ -813,8 +812,8 @@ class ChatGPTTelegramBot:
                                 continue
 
                         elif (
-                            abs(len(content) - len(prev)) > cutoff
-                            or tokens != "not_finished"
+                                abs(len(content) - len(prev)) > cutoff
+                                or tokens != "not_finished"
                         ):
                             prev = content
                             try:
@@ -909,7 +908,7 @@ class ChatGPTTelegramBot:
             )
 
     async def check_allowed_and_within_budget(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE, is_inline=False
+            self, update: Update, context: ContextTypes.DEFAULT_TYPE, is_inline=False
     ) -> bool:
         """
         Checks if the user is allowed to use the bot and if they are within their budget
@@ -943,7 +942,7 @@ class ChatGPTTelegramBot:
         return True
 
     async def send_disallowed_message(
-        self, update: Update, _: ContextTypes.DEFAULT_TYPE, is_inline=False
+            self, update: Update, _: ContextTypes.DEFAULT_TYPE, is_inline=False
     ):
         """
         Sends the disallowed message to the user.
@@ -961,7 +960,7 @@ class ChatGPTTelegramBot:
             )
 
     async def send_budget_reached_message(
-        self, update: Update, _: ContextTypes.DEFAULT_TYPE, is_inline=False
+            self, update: Update, _: ContextTypes.DEFAULT_TYPE, is_inline=False
     ):
         """
         Sends the budget reached message to the user.
@@ -994,13 +993,14 @@ class ChatGPTTelegramBot:
             "GPT-4 models": "\n".join(GPT_4_MODELS + GPT_4_32K_MODELS)
         }
 
-        available_models = "\n\n".join(f"*{escape(name)}:*\n{escape(models)}" for name, models in models_by_name.items())
+        available_models = "\n\n".join(
+            f"*{escape(name)}:*\n{escape(models)}" for name, models in models_by_name.items())
 
         if not context.args:
             await update.effective_message.reply_text(
                 message_thread_id=get_thread_id(update),
-                text=escape(f"Your current model is '{self.openai.config['model']}'. ") + \
-                    f"Available models:\n\n{available_models}",
+                text=(escape(f"Your current model is '{self.openai.config['model']}'. ") +
+                      f"Available models:\n\n{available_models}"),
                 disable_web_page_preview=True,
                 parse_mode=constants.ParseMode.MARKDOWN_V2,
             )
@@ -1011,8 +1011,8 @@ class ChatGPTTelegramBot:
         if not model.startswith(("gpt-3", "gpt3", "gpt-4", "gpt4")):
             await update.effective_message.reply_text(
                 message_thread_id=get_thread_id(update),
-                text=escape(f"'{model}' is not a valid model. ") + \
-                    "Available models:\n\n{available_models}",
+                text=(escape(f"'{model}' is not a valid model. ") +
+                      f"Available models:\n\n{available_models}"),
                 disable_web_page_preview=True,
                 parse_mode=constants.ParseMode.MARKDOWN_V2,
             )
@@ -1036,7 +1036,7 @@ class ChatGPTTelegramBot:
             f"Model changed for user {update.message.from_user.name} "
             f"(id: {update.message.from_user.id}). New model: {new_model}"
         )
-    
+
     async def post_init(self, application: Application) -> None:
         """
         Post initialization hook for the bot.
