@@ -45,7 +45,6 @@ from utils import (
     get_stream_cutoff_values,
     is_allowed,
     get_remaining_budget,
-    is_admin,
     is_within_budget,
     get_reply_to_message_id,
     add_chat_request_to_usage_tracker,

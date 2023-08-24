@@ -3,17 +3,15 @@ from __future__ import annotations
 import json
 import logging
 import os
-from calendar import monthrange
-from datetime import date, timedelta, datetime
+from datetime import timedelta, datetime, date
 
 import openai
-from openai.error import RateLimitError, InvalidRequestError
-import requests
 import tiktoken
+from openai.error import RateLimitError, InvalidRequestError
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fixed
 
-from utils import is_direct_result
 from plugin_manager import PluginManager
+from utils import is_direct_result
 
 # Models can be found here: https://platform.openai.com/docs/models/overview
 GPT_3_MODELS = ("gpt-3.5-turbo", "gpt-3.5-turbo-0301", "gpt-3.5-turbo-0613")
@@ -48,7 +46,7 @@ def are_functions_available(model: str) -> bool:
         return False
     # Stable models will be updated to support functions on June 27, 2023
     if model in ("gpt-3.5-turbo", "gpt-4", "gpt-4-32k"):
-        return datetime.date.today() > datetime.date(2023, 6, 27)
+        return date.today() > date(2023, 6, 27)
     return True
 
 
@@ -224,10 +222,10 @@ class OpenAIHelper:
             # Summarize the chat history if it's too long to avoid excessive token usage
             token_count = self.__count_tokens(self.conversations[chat_id])
             exceeded_max_tokens = (
-                token_count + self.config["max_tokens"] > self.__max_model_tokens()
+                    token_count + self.config["max_tokens"] > self.__max_model_tokens()
             )
             exceeded_max_history_size = (
-                len(self.conversations[chat_id]) > self.config["max_history_size"]
+                    len(self.conversations[chat_id]) > self.config["max_history_size"]
             )
 
             if exceeded_max_tokens or exceeded_max_history_size:
@@ -247,8 +245,8 @@ class OpenAIHelper:
                         f"Error while summarising chat history: {str(e)}. Popping elements instead..."
                     )
                     self.conversations[chat_id] = self.conversations[chat_id][
-                        -self.config["max_history_size"] :
-                    ]
+                                                  -self.config["max_history_size"]:
+                                                  ]
 
             common_args = {
                 'model': self.config["model"],
@@ -269,8 +267,6 @@ class OpenAIHelper:
 
             return await openai.ChatCompletion.acreate(**common_args)
 
-        except RateLimitError as err:
-            raise err
         except RateLimitError as err:
             raise err
 

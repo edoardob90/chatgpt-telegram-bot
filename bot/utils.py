@@ -4,8 +4,8 @@ import asyncio
 import itertools
 import json
 import logging
-from functools import partial
 import os
+from functools import partial
 
 import telegram
 from telegram import Message, MessageEntity, Update, ChatMember, constants
@@ -13,7 +13,6 @@ from telegram.ext import CallbackContext, ContextTypes
 from telegram.helpers import escape_markdown
 
 from usage_tracker import UsageTracker
-
 
 # Escape Markdown text with version 2
 escape = partial(escape_markdown, version=2)
@@ -28,8 +27,8 @@ def message_text(message: Message) -> str:
         return ""
 
     for _, text in sorted(
-        message.parse_entities([MessageEntity.BOT_COMMAND]).items(),
-        key=(lambda item: item[0].offset),
+            message.parse_entities([MessageEntity.BOT_COMMAND]).items(),
+            key=(lambda item: item[0].offset),
     ):
         message_txt = message_txt.replace(text, "").strip()
 
@@ -37,7 +36,7 @@ def message_text(message: Message) -> str:
 
 
 async def is_user_in_group(
-    update: Update, context: CallbackContext, user_id: int
+        update: Update, context: CallbackContext, user_id: int
 ) -> bool:
     """
     Checks if user_id is a member of the group
@@ -109,15 +108,15 @@ def split_into_chunks(text: str, chunk_size: int = 4096) -> list[str]:
     """
     Splits a string into chunks of a given size.
     """
-    return [text[i : i + chunk_size] for i in range(0, len(text), chunk_size)]
+    return [text[i: i + chunk_size] for i in range(0, len(text), chunk_size)]
 
 
 async def wrap_with_indicator(
-    update: Update,
-    context: CallbackContext,
-    coroutine,
-    chat_action: constants.ChatAction = "",
-    is_inline=False,
+        update: Update,
+        context: CallbackContext,
+        coroutine,
+        chat_action: constants.ChatAction = "",
+        is_inline=False,
 ):
     """
     Wraps a coroutine while repeatedly sending a chat action to the user.
@@ -137,12 +136,12 @@ async def wrap_with_indicator(
 
 
 async def edit_message_with_retry(
-    context: ContextTypes.DEFAULT_TYPE,
-    chat_id: int | None,
-    message_id: str,
-    text: str,
-    markdown: bool = True,
-    is_inline: bool = False,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int | None,
+        message_id: str,
+        text: str,
+        markdown: bool = True,
+        is_inline: bool = False,
 ):
     """
     Edit a message with retry logic in case of failure (e.g. broken markdown)
@@ -189,7 +188,7 @@ async def error_handler(_: object, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def is_allowed(
-    config, update: Update, context: CallbackContext, is_inline=False
+        config, update: Update, context: CallbackContext, is_inline=False
 ) -> bool:
     """
     Checks if the user is allowed to use the bot.
