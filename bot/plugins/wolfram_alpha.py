@@ -22,7 +22,7 @@ class WolframAlphaPlugin(Plugin):
     def get_spec(self) -> [Dict]:
         return [{
             "name": "answer_with_wolfram_alpha",
-            "description": "Get an answer to a question using Wolfram Alpha. Input should the the query in English.",
+            "description": "Get an answer to a question using Wolfram Alpha. Input should be the query in English.",
             "parameters": {
                 "type": "object",
                 "properties": {
