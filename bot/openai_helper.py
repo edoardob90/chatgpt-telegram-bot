@@ -1,18 +1,16 @@
 from __future__ import annotations
-import datetime
+
+import json
 import logging
 import os
-
-import tiktoken
+from calendar import monthrange
+from datetime import date, timedelta, datetime
 
 import openai
-
+from openai.error import RateLimitError, InvalidRequestError
 import requests
-import json
-from datetime import date
-from calendar import monthrange
-
-from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
+import tiktoken
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fixed
 
 from utils import is_direct_result
 from plugin_manager import PluginManager
@@ -32,14 +30,13 @@ def default_max_tokens(model: str) -> int:
     :return: The default number of max tokens
     """
     base = 1200
-    if model in GPT_3_MODELS:
-        return base
-    elif model in GPT_4_MODELS:
+    if model in GPT_4_MODELS:
         return base * 2
-    elif model in GPT_3_16K_MODELS:
+    if model in GPT_3_16K_MODELS:
         return base * 4
-    elif model in GPT_4_32K_MODELS:
+    if model in GPT_4_32K_MODELS:
         return base * 8
+    return base
 
 
 def are_functions_available(model: str) -> bool:
@@ -57,8 +54,8 @@ def are_functions_available(model: str) -> bool:
 
 # Load translations
 parent_dir_path = os.path.join(os.path.dirname(__file__), os.pardir)
-translations_file_path = os.path.join(parent_dir_path, 'translations.json')
-with open(translations_file_path, 'r', encoding='utf-8') as f:
+translations_file_path = os.path.join(parent_dir_path, "translations.json")
+with open(translations_file_path, "r", encoding="utf-8") as f:
     translations = json.load(f)
 
 
@@ -70,14 +67,18 @@ def localized_text(key, bot_language):
     try:
         return translations[bot_language][key]
     except KeyError:
-        logging.warning(f"No translation available for bot_language code '{bot_language}' and key '{key}'")
+        logging.warning(
+            f"No translation available for bot_language code '{bot_language}' and key '{key}'"
+        )
         # Fallback to English if the translation is not available
-        if key in translations['en']:
-            return translations['en'][key]
-        else:
-            logging.warning(f"No english definition found for key '{key}' in translations.json")
-            # return key as text
-            return key
+        if key in translations["en"]:
+            return translations["en"][key]
+
+        # If key is not available in English either, return the key itself
+        logging.warning(
+            f"No english definition found for key '{key}' in translations.json"
+        )
+        return key
 
 
 class OpenAIHelper:
@@ -91,12 +92,19 @@ class OpenAIHelper:
         :param config: A dictionary containing the GPT configuration
         :param plugin_manager: The plugin manager
         """
-        openai.api_key = config['api_key']
-        openai.proxy = config['proxy']
+        openai.api_key = config["api_key"]
+        openai.proxy = config["proxy"]
         self.config = config
         self.plugin_manager = plugin_manager
-        self.conversations: dict[int: list] = {}  # {chat_id: history}
-        self.last_updated: dict[int: datetime] = {}  # {chat_id: last_update_timestamp}
+        self.conversations: dict[int, list] = {}  # {chat_id: history}
+        self.last_updated: dict[int, datetime] = {}  # {chat_id: last_update_timestamp}
+
+    def change_model(self, model: str) -> None:
+        """
+        Changes the model.
+        :param model: The model name
+        """
+        self.config["model"] = model
 
     def get_conversation_stats(self, chat_id: int) -> tuple[int, int]:
         """
@@ -106,7 +114,9 @@ class OpenAIHelper:
         """
         if chat_id not in self.conversations:
             self.reset_chat_history(chat_id)
-        return len(self.conversations[chat_id]), self.__count_tokens(self.conversations[chat_id])
+        return len(self.conversations[chat_id]), self.__count_tokens(
+            self.conversations[chat_id]
+        )
 
     async def get_chat_response(self, chat_id: int, query: str) -> tuple[str, str]:
         """
@@ -122,18 +132,18 @@ class OpenAIHelper:
             if is_direct_result(response):
                 return response, '0'
 
-        answer = ''
+        answer = ""
 
-        if len(response.choices) > 1 and self.config['n_choices'] > 1:
+        if len(response.choices) > 1 and self.config["n_choices"] > 1:
             for index, choice in enumerate(response.choices):
-                content = choice['message']['content'].strip()
+                content = choice["message"]["content"].strip()
                 if index == 0:
                     self.__add_to_history(chat_id, role="assistant", content=content)
-                answer += f'{index + 1}\u20e3\n'
+                answer += f"{index + 1}\u20e3\n"
                 answer += content
-                answer += '\n\n'
+                answer += "\n\n"
         else:
-            answer = response.choices[0]['message']['content'].strip()
+            answer = response.choices[0]["message"]["content"].strip()
             self.__add_to_history(chat_id, role="assistant", content=answer)
 
         bot_language = self.config['bot_language']
@@ -149,7 +159,7 @@ class OpenAIHelper:
         elif show_plugins_used:
             answer += f"\n\n---\n🔌 {', '.join(plugin_names)}"
 
-        return answer, response.usage['total_tokens']
+        return answer, response.usage["total_tokens"]
 
     async def get_chat_response_stream(self, chat_id: int, query: str):
         """
@@ -166,21 +176,21 @@ class OpenAIHelper:
                 yield response, '0'
                 return
 
-        answer = ''
+        answer = ""
         async for item in response:
-            if 'choices' not in item or len(item.choices) == 0:
+            if "choices" not in item or len(item.choices) == 0:
                 continue
             delta = item.choices[0].delta
-            if 'content' in delta and delta.content is not None:
+            if "content" in delta and delta.content is not None:
                 answer += delta.content
-                yield answer, 'not_finished'
+                yield answer, "not_finished"
         answer = answer.strip()
         self.__add_to_history(chat_id, role="assistant", content=answer)
         tokens_used = str(self.__count_tokens(self.conversations[chat_id]))
 
         show_plugins_used = len(plugins_used) > 0 and self.config['show_plugins_used']
         plugin_names = tuple(self.plugin_manager.get_plugin_source_name(plugin) for plugin in plugins_used)
-        if self.config['show_usage']:
+        if self.config["show_usage"]:
             answer += f"\n\n---\n💰 {tokens_used} {localized_text('stats_tokens', self.config['bot_language'])}"
             if show_plugins_used:
                 answer += f"\n🔌 {', '.join(plugin_names)}"
@@ -191,9 +201,9 @@ class OpenAIHelper:
 
     @retry(
         reraise=True,
-        retry=retry_if_exception_type(openai.error.RateLimitError),
+        retry=retry_if_exception_type(RateLimitError),
         wait=wait_fixed(20),
-        stop=stop_after_attempt(3)
+        stop=stop_after_attempt(3),
     )
     async def __common_get_chat_response(self, chat_id: int, query: str, stream=False):
         """
@@ -202,41 +212,53 @@ class OpenAIHelper:
         :param query: The query to send to the model
         :return: The answer from the model and the number of tokens used
         """
-        bot_language = self.config['bot_language']
+        bot_language = self.config["bot_language"]
         try:
             if chat_id not in self.conversations or self.__max_age_reached(chat_id):
                 self.reset_chat_history(chat_id)
 
-            self.last_updated[chat_id] = datetime.datetime.now()
+            self.last_updated[chat_id] = datetime.now()
 
             self.__add_to_history(chat_id, role="user", content=query)
 
             # Summarize the chat history if it's too long to avoid excessive token usage
             token_count = self.__count_tokens(self.conversations[chat_id])
-            exceeded_max_tokens = token_count + self.config['max_tokens'] > self.__max_model_tokens()
-            exceeded_max_history_size = len(self.conversations[chat_id]) > self.config['max_history_size']
+            exceeded_max_tokens = (
+                token_count + self.config["max_tokens"] > self.__max_model_tokens()
+            )
+            exceeded_max_history_size = (
+                len(self.conversations[chat_id]) > self.config["max_history_size"]
+            )
 
             if exceeded_max_tokens or exceeded_max_history_size:
-                logging.info(f'Chat history for chat ID {chat_id} is too long. Summarising...')
+                logging.info(
+                    f"Chat history for chat ID {chat_id} is too long. Summarising..."
+                )
                 try:
                     summary = await self.__summarise(self.conversations[chat_id][:-1])
-                    logging.debug(f'Summary: {summary}')
-                    self.reset_chat_history(chat_id, self.conversations[chat_id][0]['content'])
+                    logging.debug(f"Summary: {summary}")
+                    self.reset_chat_history(
+                        chat_id, self.conversations[chat_id][0]["content"]
+                    )
                     self.__add_to_history(chat_id, role="assistant", content=summary)
                     self.__add_to_history(chat_id, role="user", content=query)
                 except Exception as e:
-                    logging.warning(f'Error while summarising chat history: {str(e)}. Popping elements instead...')
-                    self.conversations[chat_id] = self.conversations[chat_id][-self.config['max_history_size']:]
+                    logging.warning(
+                        f"Error while summarising chat history: {str(e)}. Popping elements instead..."
+                    )
+                    self.conversations[chat_id] = self.conversations[chat_id][
+                        -self.config["max_history_size"] :
+                    ]
 
             common_args = {
-                'model': self.config['model'],
+                'model': self.config["model"],
                 'messages': self.conversations[chat_id],
-                'temperature': self.config['temperature'],
-                'n': self.config['n_choices'],
-                'max_tokens': self.config['max_tokens'],
-                'presence_penalty': self.config['presence_penalty'],
-                'frequency_penalty': self.config['frequency_penalty'],
-                'stream': stream
+                'temperature': self.config["temperature"],
+                'n': self.config["n_choices"],
+                'max_tokens': self.config["max_tokens"],
+                'presence_penalty': self.config["presence_penalty"],
+                'frequency_penalty': self.config["frequency_penalty"],
+                'stream': stream,
             }
 
             if self.config['enable_functions']:
@@ -247,14 +269,20 @@ class OpenAIHelper:
 
             return await openai.ChatCompletion.acreate(**common_args)
 
-        except openai.error.RateLimitError as e:
-            raise e
+        except RateLimitError as err:
+            raise err
+        except RateLimitError as err:
+            raise err
 
-        except openai.error.InvalidRequestError as e:
-            raise Exception(f"⚠️ _{localized_text('openai_invalid', bot_language)}._ ⚠️\n{str(e)}") from e
+        except InvalidRequestError as err:
+            raise Exception(
+                f"⚠️ _{localized_text('openai_invalid', bot_language)}._ ⚠️\n{str(err)}"
+            ) from err
 
-        except Exception as e:
-            raise Exception(f"⚠️ _{localized_text('error', bot_language)}._ ⚠️\n{str(e)}") from e
+        except Exception as err:
+            raise Exception(
+                f"⚠️ _{localized_text('error', bot_language)}._ ⚠️\n{str(err)}"
+            ) from err
 
     async def __handle_function_call(self, chat_id, response, stream=False, times=0, plugins_used=()):
         function_name = ''
@@ -316,24 +344,24 @@ class OpenAIHelper:
         :param prompt: The prompt to send to the model
         :return: The image URL and the image size
         """
-        bot_language = self.config['bot_language']
+        bot_language = self.config["bot_language"]
         try:
             response = await openai.Image.acreate(
-                prompt=prompt,
-                n=1,
-                size=self.config['image_size']
+                prompt=prompt, n=1, size=self.config["image_size"]
             )
 
-            if 'data' not in response or len(response['data']) == 0:
-                logging.error(f'No response from GPT: {str(response)}')
+            if "data" not in response or len(response["data"]) == 0:
+                logging.error(f"No response from GPT: {str(response)}")
                 raise Exception(
                     f"⚠️ _{localized_text('error', bot_language)}._ "
                     f"⚠️\n{localized_text('try_again', bot_language)}."
                 )
 
-            return response['data'][0]['url'], self.config['image_size']
+            return response["data"][0]["url"], self.config["image_size"]
         except Exception as e:
-            raise Exception(f"⚠️ _{localized_text('error', bot_language)}._ ⚠️\n{str(e)}") from e
+            raise Exception(
+                f"⚠️ _{localized_text('error', bot_language)}._ ⚠️\n{str(e)}"
+            ) from e
 
     async def transcribe(self, filename):
         """
@@ -345,14 +373,16 @@ class OpenAIHelper:
                 return result.text
         except Exception as e:
             logging.exception(e)
-            raise Exception(f"⚠️ _{localized_text('error', self.config['bot_language'])}._ ⚠️\n{str(e)}") from e
+            raise Exception(
+                f"⚠️ _{localized_text('error', self.config['bot_language'])}._ ⚠️\n{str(e)}"
+            ) from e
 
-    def reset_chat_history(self, chat_id, content=''):
+    def reset_chat_history(self, chat_id, content=""):
         """
         Resets the conversation history.
         """
-        if content == '':
-            content = self.config['assistant_prompt']
+        if content == "":
+            content = self.config["assistant_prompt"]
         self.conversations[chat_id] = [{"role": "system", "content": content}]
 
     def __max_age_reached(self, chat_id) -> bool:
@@ -364,9 +394,9 @@ class OpenAIHelper:
         if chat_id not in self.last_updated:
             return False
         last_updated = self.last_updated[chat_id]
-        now = datetime.datetime.now()
-        max_age_minutes = self.config['max_conversation_age_minutes']
-        return last_updated < now - datetime.timedelta(minutes=max_age_minutes)
+        now = datetime.now()
+        max_age_minutes = self.config["max_conversation_age_minutes"]
+        return last_updated < now - timedelta(minutes=max_age_minutes)
 
     def __add_function_call_to_history(self, chat_id, function_name, content):
         """
@@ -390,25 +420,26 @@ class OpenAIHelper:
         :return: The summary
         """
         messages = [
-            {"role": "assistant", "content": "Summarize this conversation in 700 characters or less"},
-            {"role": "user", "content": str(conversation)}
+            {
+                "role": "assistant",
+                "content": "Summarize this conversation in 700 characters or less",
+            },
+            {"role": "user", "content": str(conversation)},
         ]
         response = await openai.ChatCompletion.acreate(
-            model=self.config['model'],
-            messages=messages,
-            temperature=0.4
+            model=self.config["model"], messages=messages, temperature=0.4
         )
-        return response.choices[0]['message']['content']
+        return response.choices[0]["message"]["content"]
 
     def __max_model_tokens(self):
         base = 4096
-        if self.config['model'] in GPT_3_MODELS:
+        if self.config["model"] in GPT_3_MODELS:
             return base
-        if self.config['model'] in GPT_3_16K_MODELS:
+        if self.config["model"] in GPT_3_16K_MODELS:
             return base * 4
-        if self.config['model'] in GPT_4_MODELS:
+        if self.config["model"] in GPT_4_MODELS:
             return base * 2
-        if self.config['model'] in GPT_4_32K_MODELS:
+        if self.config["model"] in GPT_4_32K_MODELS:
             return base * 8
         raise NotImplementedError(
             f"Max tokens for model {self.config['model']} is not implemented yet."
@@ -421,20 +452,24 @@ class OpenAIHelper:
         :param messages: the messages to send
         :return: the number of tokens required
         """
-        model = self.config['model']
+        model = self.config["model"]
         try:
             encoding = tiktoken.encoding_for_model(model)
         except KeyError:
             encoding = tiktoken.get_encoding("gpt-3.5-turbo")
 
         if model in GPT_3_MODELS + GPT_3_16K_MODELS:
-            tokens_per_message = 4  # every message follows <|start|>{role/name}\n{content}<|end|>\n
+            tokens_per_message = (
+                4  # every message follows <|start|>{role/name}\n{content}<|end|>\n
+            )
             tokens_per_name = -1  # if there's a name, the role is omitted
         elif model in GPT_4_MODELS + GPT_4_32K_MODELS:
             tokens_per_message = 3
             tokens_per_name = 1
         else:
-            raise NotImplementedError(f"""num_tokens_from_messages() is not implemented for model {model}.""")
+            raise NotImplementedError(
+                f"""num_tokens_from_messages() is not implemented for model {model}."""
+            )
         num_tokens = 0
         for message in messages:
             num_tokens += tokens_per_message
