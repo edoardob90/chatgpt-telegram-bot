@@ -591,8 +591,8 @@ class ChatGPTTelegramBot:
                             continue
 
                     elif (
-                            abs(len(content) - len(prev)) > cutoff
-                            or tokens != "not_finished"
+                                abs(len(content) - len(prev)) > cutoff
+                                or tokens != "not_finished"
                     ):
                         prev = content
 
@@ -1008,8 +1008,8 @@ class ChatGPTTelegramBot:
         if not context.args:
             await update.effective_message.reply_text(
                 message_thread_id=get_thread_id(update),
-                text=escape(f"Your current model is '{self.openai.config['model']}'. ") + \
-                     f"Available models:\n\n{available_models}",
+                text=(escape(f"Your current model is '{self.openai.config['model']}'. ") +
+                     f"Available models:\n\n{available_models}"),
                 disable_web_page_preview=True,
                 parse_mode=constants.ParseMode.MARKDOWN_V2,
             )
@@ -1020,8 +1020,8 @@ class ChatGPTTelegramBot:
         if not model.startswith(("gpt-3", "gpt3", "gpt-4", "gpt4")):
             await update.effective_message.reply_text(
                 message_thread_id=get_thread_id(update),
-                text=escape(f"'{model}' is not a valid model. ") + \
-                     "Available models:\n\n{available_models}",
+                text=(escape(f"'{model}' is not a valid model. ") +
+                     f"Available models:\n\n{available_models}"),
                 disable_web_page_preview=True,
                 parse_mode=constants.ParseMode.MARKDOWN_V2,
             )
